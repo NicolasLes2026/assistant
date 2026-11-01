@@ -48,7 +48,7 @@ textarea{min-height:90px;resize:vertical}
 <input type="file" id="imp" accept="application/json" hidden>
 <script>
 const K='assistant-v2';
-let S={sess:[],plans:{},wt:[],dates:[],stock:[],day:{d:'',items:[]},ideas:[],tried:[],jr:{}};
+let S={sess:[],plans:{},wt:[],dates:[],stock:[],day:{d:'',items:[]},ideas:[],tried:[],jr:{},notes:[]};
 try{Object.assign(S,JSON.parse(localStorage.getItem(K)||'{}'))}catch(e){}
 const save=()=>{try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}};
 const $=s=>document.querySelector(s),V=id=>($('#'+id)||{}).value||'';
@@ -63,31 +63,38 @@ function fdur(m){const t=Math.round(m*60),h=Math.floor(t/3600);return h?`${h} h 
 function dl(name,txt,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
 
 /* Nouveau jour : les tâches non faites retournent dans la liste générale */
-(function(){const t=today();if(S.day.d!==t){S.day.items.filter(x=>!x.done).forEach(x=>S.stock.push({id:x.id,text:x.text}));S.day={d:t,items:[]};save()}})();
+const ld=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`};
+function mig(){if(!S.notes)S.notes=[];Object.keys(S.jr||{}).forEach(k=>{const j=S.jr[k];if(j&&j.text)S.notes.push({id:uid(),ts:new Date(k+'T21:00').getTime(),text:j.text,mood:j.mood||''})});S.jr={}}
+mig();
+(function(){const t=today();if(S.day.d!==t){S.day.items.filter(x=>!x.done).forEach(x=>S.stock.push({id:x.id,text:x.text,due:x.due||''}));S.day={d:t,items:[]}}save()})();
 
-let tab='j',mo=today().slice(0,7),mood='';
+let tab='j',mo=today().slice(0,7),mood='',jd='',editId=null;
 const TABS=[['j','Jour'],['s','Sport'],['t','To do'],['i','Idées'],['a','Agenda'],['n','Journal']];
-const TYPES=['Course','Renforcement','Vélo','Marche','Natation','Autre'],CATS=['Lecture','Sortie','Recette'],MOODS=['😞','😐','🙂','😄'];
+const TYPES=['Course','Renforcement','Vélo','Marche','Natation','Autre'],CATS=['Lecture','Sortie','Recette','Film','Business'],CATL={Lecture:'Lectures',Sortie:'Sorties',Recette:'Recettes',Film:'Films à regarder',Business:'Business à créer'},DIST=['Course','Vélo','Marche','Natation'],MOODS=['😞','😐','🙂','😄'];
 const DUE=3*864e5;
 const dueIdeas=()=>S.ideas.filter(x=>Date.now()-x.last>=DUE);
 function nxt(x){const [y,m,d]=x.date.split('-').map(Number),n=new Date(),t0=new Date(n.getFullYear(),n.getMonth(),n.getDate());let a=new Date(x.yearly?n.getFullYear():y,m-1,d);if(x.yearly&&a<t0)a=new Date(n.getFullYear()+1,m-1,d);return Math.round((a-t0)/864e5)}
-const inDays=n=>n===0?'aujourd’hui':n===1?'demain':n<0?'passé':`dans ${n} j`;
+const inDays=(n,t)=>n===0?'aujourd’hui':n===1?'demain':n<0?(t?'en retard':'passé'):`dans ${n} j`;
+const dueLbl=d=>{const n=nxt({date:d});return (n<0?'⚠ En retard · ':n===0?'Aujourd’hui · ':'')+fd(d)};
+const dueTasks=()=>[...S.stock,...S.day.items.filter(x=>!x.done)].filter(x=>x.due).map(x=>({...x,n:nxt({date:x.due})}));
+const calBtn=i=>`<button class="x" data-a="ics" data-i="${i}" title="Ajouter au calendrier du téléphone" aria-label="Ajouter au calendrier">📅</button>`;
+function ics(title,date,yearly){const e=new Date(date+'T12:00');e.setDate(e.getDate()+1);return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Assistant//FR','BEGIN:VEVENT','UID:'+uid()+'@assistant','DTSTAMP:'+new Date().toISOString().replace(/[-:]|\.\d+/g,''),'DTSTART;VALUE=DATE:'+date.replace(/-/g,''),'DTEND;VALUE=DATE:'+ld(e.getTime()).replace(/-/g,''),'SUMMARY:'+title.replace(/[\n,;]/g,' '),...(yearly?['RRULE:FREQ=YEARLY']:[]),'END:VEVENT','END:VCALENDAR'].join('\r\n')}
 const mnav=()=>`<div class="mn"><button class="btn g" data-a="pm" data-i="-1" aria-label="Mois précédent">‹</button><strong>${fd(mo+'-01',{month:'long',year:'numeric'})}</strong><button class="btn g" data-a="pm" data-i="1" aria-label="Mois suivant">›</button></div>`;
-const dayItems=()=>S.day.items.map(x=>`<div class="item ${x.done?'dn':''}"><input type="checkbox" data-a="dchk" data-i="${x.id}" ${x.done?'checked':''} aria-label="Fait"><div class="tx">${esc(x.text)}</div><button class="x" data-a="dback" data-i="${x.id}" title="Remettre dans la liste générale" aria-label="Remettre dans la liste générale">↩</button></div>`).join('');
+const dayItems=()=>S.day.items.map(x=>`<div class="item ${x.done?'dn':''}"><input type="checkbox" data-a="dchk" data-i="${x.id}" ${x.done?'checked':''} aria-label="Fait"><div class="tx">${esc(x.text)}${x.due?`<small>${dueLbl(x.due)}</small>`:''}</div>${x.due?calBtn(x.id):''}<button class="x" data-a="dback" data-i="${x.id}" title="Remettre dans la liste générale" aria-label="Remettre dans la liste générale">↩</button></div>`).join('');
 function spark(v){if(v.length<2)return '';const a=Math.min(...v),b=Math.max(...v),r=b-a||1;return `<svg viewBox="0 0 300 80" width="100%" role="img" aria-label="Courbe de poids"><polyline points="${v.map((y,i)=>`${5+i/(v.length-1)*290},${70-(y-a)/r*60}`).join(' ')}" fill="none" stroke="var(--acc)" stroke-width="2.5" stroke-linejoin="round"/></svg>`}
 
 function vJ(){
-  const due=dueIdeas(),soon=S.dates.map(x=>({...x,n:nxt(x)})).filter(x=>x.n>=0&&x.n<=14).sort((a,b)=>a.n-b.n);
+  const due=dueIdeas(),soon=[...S.dates.map(x=>({...x,n:nxt(x)})).filter(x=>x.n>=0&&x.n<=14),...dueTasks().filter(x=>x.n<=7).map(x=>({title:'☑ '+x.text,date:x.due,n:x.n,t:1}))].sort((a,b)=>a.n-b.n);
   return `<h1>${new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}</h1>
   <h2>To do du jour</h2>${S.day.items.length?dayItems():`<div class="card">Ta journée est vide.<br><br><button class="btn" data-a="tab" data-i="t">Choisir mes tâches</button></div>`}
   ${due.length?`<h2>As-tu eu le temps d’essayer ?</h2>`+due.map(x=>`<div class="card"><b>${esc(x.text)}</b><span class="m">${x.cat}</span><div class="row" style="margin-top:8px"><button class="btn" data-a="itry" data-i="${x.id}">Oui, essayé</button><button class="btn g" data-a="ikeep" data-i="${x.id}">Non, je garde</button><button class="btn g" data-a="idrop" data-i="${x.id}">Non, j’abandonne</button></div></div>`).join(''):''}
-  ${soon.length?`<h2>Dates à venir</h2>`+soon.map(x=>`<div class="item"><div>${esc(x.title)}<small>${fd(x.date)}</small></div><b>${inDays(x.n)}</b></div>`).join(''):''}
-  ${new Date().getHours()>=18&&!S.jr[today()]?`<div class="card">Ta pensée du soir n’est pas écrite.<br><br><button class="btn" data-a="tab" data-i="n">Écrire</button></div>`:''}
+  ${soon.length?`<h2>Dates et échéances</h2>`+soon.map(x=>`<div class="item"><div>${esc(x.title)}<small>${fd(x.date)}</small></div><b>${inDays(x.n,x.t)}</b></div>`).join(''):''}
+  ${new Date().getHours()>=18&&!S.notes.some(n=>ld(n.ts)===today())?`<div class="card">Rien dans ton carnet aujourd’hui.<br><br><button class="btn" data-a="tab" data-i="n">Écrire</button></div>`:''}
   <h2>Mes données</h2><div class="row"><button class="btn g" data-a="xall">Exporter tout</button><button class="btn g" data-a="imp">Importer</button></div>
   <p class="m">Tout est stocké sur ce téléphone. Exporte de temps en temps pour garder une sauvegarde.</p>`;
 }
 function vS(){
-  const es=S.sess.filter(x=>x.date.startsWith(mo)).sort((a,b)=>b.date.localeCompare(a.date)),P=S.plans[mo]||{};
+  const es=S.sess.filter(x=>x.date.startsWith(mo)).sort((a,b)=>b.date.localeCompare(a.date)),P=S.plans[mo]||{},PT=P.t||((P.n||P.k)?{Total:{n:P.n||0,k:P.k||0}}:{}),ROWS=['Total',...TYPES];
   const km=es.reduce((s,x)=>s+(x.dist||0),0),mn=es.reduce((s,x)=>s+x.min,0);
   const w=[...S.wt].sort((a,b)=>a.date.localeCompare(b.date)),l=w[w.length-1],p=w[w.length-2];
   const bar=(v,t)=>t?`<div class="pb"><i style="width:${Math.min(100,v/t*100)}%"></i></div>`:'';
@@ -96,10 +103,9 @@ function vS(){
   <input id="sk" type="number" step="0.01" min="0" inputmode="decimal" placeholder="km (facultatif)"><input id="sm" placeholder="Durée (32 ou 32:30)"><input id="sn" placeholder="Note (facultatif)"><button class="btn" data-a="sadd">Ajouter</button></div></div>
   ${mnav()}
   <div class="card"><b>Plan du mois</b>
-  <div class="row" style="margin:8px 0"><input id="pn" type="number" min="0" inputmode="numeric" placeholder="Séances visées" value="${P.n||''}"><input id="pk" type="number" min="0" inputmode="decimal" placeholder="km visés" value="${P.k||''}"><button class="btn g" data-a="plan">Enregistrer</button></div>
-  <span class="m">Séances : ${es.length}${P.n?' / '+P.n:''}</span>${bar(es.length,P.n)}
-  <span class="m">Distance : ${fr(km)} km${P.k?' / '+P.k+' km':''}</span>${bar(km,P.k)}
-  <span class="m">Temps total : ${mn?fdur(mn)+' (h:min)':'–'}</span></div>
+  ${ROWS.filter(r=>PT[r]).map(r=>{const q=PT[r],E=r==='Total'?es:es.filter(x=>x.type===r),k=E.reduce((t,x)=>t+(x.dist||0),0);return `<div style="margin-top:8px"><b>${r}</b>${q.n?`<span class="m">Séances : ${E.length} / ${q.n}</span>${bar(E.length,q.n)}`:''}${q.k?`<span class="m">Distance : ${fr(k)} / ${q.k} km</span>${bar(k,q.k)}`:''}</div>`}).join('')||'<p class="m">Pas encore de plan. Définis tes objectifs ci-dessous.</p>'}
+  <span class="m" style="margin-top:8px">Ce mois-ci : ${es.length} séance${es.length>1?'s':''} · ${fr(km)} km · ${mn?fdur(mn)+' (h:min)':'–'}</span>
+  <details style="margin-top:10px"><summary>Modifier le plan</summary>${ROWS.map((r,i)=>`<div class="row" style="margin-top:8px"><b style="flex:1 1 100%">${r}</b><input id="pn${i}" type="number" min="0" inputmode="numeric" placeholder="Séances" value="${(PT[r]||{}).n||''}">${r==='Total'||DIST.includes(r)?`<input id="pk${i}" type="number" min="0" inputmode="decimal" placeholder="km" value="${(PT[r]||{}).k||''}">`:''}</div>`).join('')}<button class="btn" data-a="plan" style="margin-top:10px">Enregistrer le plan</button></details></div>
   ${es.length?es.map(x=>`<div class="item"><div><b>${x.type}</b> ${x.dist?fr(x.dist)+' km · ':''}${fdur(x.min)}${x.dist&&x.type==='Course'?' · '+fdur(x.min/x.dist)+' min/km':''}<small>${fd(x.date)}${x.note?' · '+esc(x.note):''}</small></div><button class="x" data-a="sdel" data-i="${x.id}" aria-label="Supprimer">×</button></div>`).join(''):'<p class="e">Aucune séance ce mois-ci.</p>'}
   <h2>Poids</h2><div class="card"><div class="row"><input id="wd" type="date" value="${today()}" aria-label="Date"><input id="wk" type="number" step="0.1" inputmode="decimal" placeholder="kg"><button class="btn" data-a="wadd">Ajouter</button></div>
   ${l?`<div style="margin-top:10px"><span class="big">${fr(l.kg)} kg</span> <span class="m" style="display:inline">${p?(l.kg-p.kg>0?'+':'')+fr(l.kg-p.kg)+' depuis la mesure précédente':''}</span></div>${spark(w.slice(-30).map(x=>x.kg))}`:''}</div>
@@ -107,57 +113,62 @@ function vS(){
 }
 function vT(){
   return `<h1>To do</h1><h2>Aujourd’hui</h2>${S.day.items.length?dayItems():'<p class="e">Rien de choisi. Ajoute des tâches depuis la liste générale.</p>'}
-  <h2>Liste générale</h2><div class="card"><div class="row"><input id="tx" placeholder="Nouvelle tâche" maxlength="150"><button class="btn" data-a="tadd">Ajouter</button></div></div>
-  ${S.stock.length?S.stock.map(x=>`<div class="item"><div>${esc(x.text)}</div><button class="btn g" data-a="tday" data-i="${x.id}">Aujourd’hui</button><button class="x" data-a="tdel" data-i="${x.id}" aria-label="Supprimer">×</button></div>`).join(''):'<p class="e">Liste vide.</p>'}
+  <h2>Liste générale</h2><div class="card"><div class="row"><input id="tx" placeholder="Nouvelle tâche" maxlength="150"><input id="td" type="date" aria-label="Échéance (facultatif)"><button class="btn" data-a="tadd">Ajouter</button></div><span class="m" style="margin-top:6px">Échéance facultative : elle apparaît dans Jour et Agenda, et un bouton 📅 l’ajoute au calendrier du téléphone.</span></div>
+  ${S.stock.length?S.stock.map(x=>`<div class="item"><div>${esc(x.text)}${x.due?`<small>${dueLbl(x.due)}</small>`:''}</div>${x.due?calBtn(x.id):''}<button class="btn g" data-a="tday" data-i="${x.id}">Aujourd’hui</button><button class="x" data-a="tdel" data-i="${x.id}" aria-label="Supprimer">×</button></div>`).join(''):'<p class="e">Liste vide.</p>'}
   <button class="btn g" data-a="xtodo" style="margin-top:8px">Exporter en texte</button>
   <p class="m">Chaque nouvelle journée, les tâches non faites reviennent dans la liste générale.</p>`;
 }
 function vI(){
   const hist=S.tried.length;
   return `<h1>Idées</h1><div class="card"><div class="row"><select id="ic" aria-label="Catégorie">${CATS.map(c=>`<option>${c}</option>`).join('')}</select><input id="ix" placeholder="Un livre, un lieu, une recette..." maxlength="150"><button class="btn" data-a="iadd">Ajouter</button></div></div>
-  ${CATS.map(c=>{const l=S.ideas.filter(x=>x.cat===c);return `<h2>${c}s</h2>`+(l.length?l.map(x=>`<div class="item"><div>${esc(x.text)}<small>${Date.now()-x.last>=DUE?'<span class="w">À relancer</span>':'ajouté le '+fd(new Date(x.added).toISOString().slice(0,10))}</small></div><button class="btn g" data-a="itry" data-i="${x.id}">Essayé</button><button class="x" data-a="idel" data-i="${x.id}" aria-label="Supprimer">×</button></div>`).join(''):'<p class="e">Rien pour l’instant.</p>')}).join('')}
+  ${CATS.map(c=>{const l=S.ideas.filter(x=>x.cat===c);return `<h2>${CATL[c]}</h2>`+(l.length?l.map(x=>`<div class="item"><div>${esc(x.text)}<small>${Date.now()-x.last>=DUE?'<span class="w">À relancer</span>':'ajouté le '+fd(new Date(x.added).toISOString().slice(0,10))}</small></div><button class="btn g" data-a="itry" data-i="${x.id}">Essayé</button><button class="x" data-a="idel" data-i="${x.id}" aria-label="Supprimer">×</button></div>`).join(''):'<p class="e">Rien pour l’instant.</p>')}).join('')}
   <h2>Déjà essayé (${hist})</h2>${S.tried.slice().reverse().map(x=>`<div class="item"><div>${esc(x.text)}<small>${x.cat} · ${fd(x.on)}</small></div></div>`).join('')}`;
 }
 function vA(){
   const l=S.dates.map(x=>({...x,n:nxt(x)})).sort((a,b)=>(a.n<0)-(b.n<0)||(a.n<0?b.n-a.n:a.n-b.n));
   return `<h1>Agenda</h1><div class="card"><div class="row"><input id="at" placeholder="Ex. : anniversaire de Léa" maxlength="80"><input id="ad" type="date" value="${today()}" aria-label="Date"><label class="row" style="flex:none"><input type="checkbox" id="ay" style="width:20px;flex:none"> Chaque année</label><button class="btn" data-a="aadd">Ajouter</button></div></div>
-  ${l.length?l.map(x=>`<div class="item ${x.n<0?'dn':''}"><div class="tx">${esc(x.title)}<small>${fd(x.date,{weekday:'short',day:'numeric',month:'long',year:'numeric'})}${x.yearly?' · chaque année':''}</small></div><b>${inDays(x.n)}</b><button class="x" data-a="adel" data-i="${x.id}" aria-label="Supprimer">×</button></div>`).join(''):'<p class="e">Aucune date. Ajoute la première.</p>'}`;
+  ${l.length?l.map(x=>`<div class="item ${x.n<0?'dn':''}"><div class="tx">${esc(x.title)}<small>${fd(x.date,{weekday:'short',day:'numeric',month:'long',year:'numeric'})}${x.yearly?' · chaque année':''}</small></div><b>${inDays(x.n)}</b>${calBtn(x.id)}<button class="x" data-a="adel" data-i="${x.id}" aria-label="Supprimer">×</button></div>`).join(''):'<p class="e">Aucune date. Ajoute la première.</p>'}
+  ${dueTasks().length?'<h2>Tâches avec échéance</h2>'+dueTasks().sort((a,b)=>a.n-b.n).map(x=>`<div class="item"><div>${esc(x.text)}<small>${fd(x.due)}</small></div><b>${inDays(x.n,1)}</b>${calBtn(x.id)}</div>`).join(''):''}`;
 }
 function vN(){
-  const t=today(),cur=S.jr[t]||{},ks=Object.keys(S.jr).sort().reverse();let m='';
-  return `<h1>Journal</h1><div class="card"><b>Une pensée pour aujourd’hui</b><div class="row" style="margin:8px 0">${MOODS.map(x=>`<button class="mood" data-a="mood" data-i="${x}" aria-pressed="${(mood||cur.mood)===x}" aria-label="Humeur ${x}">${x}</button>`).join('')}</div>
-  <textarea id="jt" placeholder="Ressenti, idée, moment important...">${esc(cur.text||'')}</textarea><button class="btn" data-a="nsave" style="margin-top:8px">Enregistrer</button></div>
-  ${ks.map(k=>{let h='';if(k.slice(0,7)!==m){m=k.slice(0,7);h=`<h2 style="text-transform:capitalize">${fd(m+'-01',{month:'long',year:'numeric'})}</h2>`}return h+`<div class="item"><div>${esc(S.jr[k].text)}<small>${fd(k)} ${S.jr[k].mood||''}</small></div></div>`}).join('')||'<p class="e">Ton journal se remplira ici.</p>'}`;
+  const L=[...S.notes].sort((a,b)=>b.ts-a.ts);let m='';
+  return `<h1>Journal</h1><div class="card"><b>${editId?'Modifier la note':'Une réflexion, une idée, un ressenti'}</b><div class="row" style="margin:8px 0">${MOODS.map(x=>`<button class="mood" data-a="mood" data-i="${x}" aria-pressed="${mood===x}" aria-label="Humeur ${x}">${x}</button>`).join('')}</div>
+  <textarea id="jt" placeholder="Écris librement...">${esc(jd)}</textarea><div class="row" style="margin-top:8px"><button class="btn" data-a="nsave">${editId?'Enregistrer':'Ajouter'}</button>${editId?'<button class="btn g" data-a="ncancel">Annuler</button>':''}</div></div>
+  ${L.map(n=>{let h='';const k=ld(n.ts).slice(0,7);if(k!==m){m=k;h=`<h2 style="text-transform:capitalize">${fd(k+'-01',{month:'long',year:'numeric'})}</h2>`}return h+`<div class="item"><div style="white-space:pre-wrap">${esc(n.text)}<small>${fd(ld(n.ts))} · ${new Date(n.ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})} ${n.mood||''}</small></div><button class="x" data-a="nedit" data-i="${n.id}" aria-label="Modifier">✎</button><button class="x" data-a="ndel" data-i="${n.id}" aria-label="Supprimer">×</button></div>`}).join('')||'<p class="e">Ton journal se remplira ici.</p>'}`;
 }
 function R(){$('#nav').innerHTML=TABS.map(([k,l])=>`<button data-a="tab" data-i="${k}" aria-selected="${k===tab}">${l}</button>`).join('');$('#app').innerHTML=({j:vJ,s:vS,t:vT,i:vI,a:vA,n:vN})[tab]()}
 const del=(k,i)=>{S[k]=S[k].filter(x=>x.id!==i);save();R()};
 const A={
- tab:i=>{tab=i;scrollTo(0,0);R()},
+ tab:i=>{if(tab==='n')jd=V('jt');tab=i;scrollTo(0,0);R()},
  pm:i=>{const [y,m]=mo.split('-').map(Number),d=new Date(y,m-1+Number(i),1);mo=`${d.getFullYear()}-${pad(d.getMonth()+1)}`;R()},
  sadd:()=>{const d=V('sd'),m=dur(V('sm')),k=V('sk')?num(V('sk')):0;if(!d||!(m>0)){alert('Renseigne la date et la durée (ex. 32 ou 32:30).');return}S.sess.push({id:uid(),date:d,type:V('st'),dist:k>0?k:0,min:m,note:V('sn').trim()});mo=d.slice(0,7);save();R()},
  sdel:i=>del('sess',i),
- plan:()=>{S.plans[mo]={n:num(V('pn'))||0,k:num(V('pk'))||0};save();R()},
+ plan:()=>{const t={};['Total',...TYPES].forEach((r,i)=>{const n=num(V('pn'+i))||0,k=num(V('pk'+i))||0;if(n||k)t[r]={n,k}});S.plans[mo]={t};save();R()},
  wadd:()=>{const k=num(V('wk'));if(!(k>0)){alert('Entre ton poids en kg.');return}S.wt.push({id:uid(),date:V('wd')||today(),kg:k});save();R()},
  wdel:i=>del('wt',i),
- tadd:()=>{const t=V('tx').trim();if(!t)return;S.stock.push({id:uid(),text:t});save();R()},
- tday:i=>{const x=S.stock.find(y=>y.id===i);S.stock=S.stock.filter(y=>y.id!==i);S.day.items.push({id:x.id,text:x.text,done:false});save();R()},
+ tadd:()=>{const t=V('tx').trim();if(!t)return;S.stock.push({id:uid(),text:t,due:V('td')});save();R()},
+ tday:i=>{const x=S.stock.find(y=>y.id===i);S.stock=S.stock.filter(y=>y.id!==i);S.day.items.push({id:x.id,text:x.text,done:false,due:x.due||''});save();R()},
  tdel:i=>del('stock',i),
  dchk:i=>{const x=S.day.items.find(y=>y.id===i);x.done=!x.done;save();R()},
- dback:i=>{const x=S.day.items.find(y=>y.id===i);S.day.items=S.day.items.filter(y=>y.id!==i);S.stock.push({id:x.id,text:x.text});save();R()},
- xtodo:()=>dl('todo-'+today()+'.txt',['À faire aujourd’hui :',...S.day.items.map(x=>`[${x.done?'x':' '}] ${x.text}`),'','Liste générale :',...S.stock.map(x=>'- '+x.text)].join('\n'),'text/plain'),
+ dback:i=>{const x=S.day.items.find(y=>y.id===i);S.day.items=S.day.items.filter(y=>y.id!==i);S.stock.push({id:x.id,text:x.text,due:x.due||''});save();R()},
+ xtodo:()=>dl('todo-'+today()+'.txt',['À faire aujourd’hui :',...S.day.items.map(x=>`[${x.done?'x':' '}] ${x.text}${x.due?' (échéance '+x.due+')':''}`),'','Liste générale :',...S.stock.map(x=>'- '+x.text+(x.due?' (échéance '+x.due+')':''))].join('\n'),'text/plain'),
  iadd:()=>{const t=V('ix').trim();if(!t)return;S.ideas.push({id:uid(),cat:V('ic'),text:t,added:Date.now(),last:Date.now()});save();R()},
  itry:i=>{const x=S.ideas.find(y=>y.id===i);S.tried.push({...x,on:today()});del('ideas',i)},
  ikeep:i=>{S.ideas.find(y=>y.id===i).last=Date.now();save();R()},
  idrop:i=>del('ideas',i),idel:i=>del('ideas',i),
  aadd:()=>{const t=V('at').trim(),d=V('ad');if(!t||!d)return;S.dates.push({id:uid(),title:t,date:d,yearly:$('#ay').checked});save();R()},
  adel:i=>del('dates',i),
- mood:i=>{mood=i;const t=V('jt');S.jr[today()]={...(S.jr[today()]||{}),text:t,mood:i};if(!t)delete S.jr[today()];R()},
- nsave:()=>{const t=V('jt').trim();if(!t){alert('Écris quelque chose avant d’enregistrer.');return}S.jr[today()]={text:t,mood:mood||(S.jr[today()]||{}).mood||''};save();R()},
+ ics:i=>{const x=[...S.stock,...S.day.items,...S.dates].find(y=>y.id===i);if(x)dl('evenement.ics',ics(x.text||x.title,x.due||x.date,x.yearly),'text/calendar')},
+ mood:i=>{jd=V('jt');mood=mood===i?'':i;R()},
+ nsave:()=>{const t=V('jt').trim();if(!t){alert('Écris quelque chose avant d’enregistrer.');return}if(editId){const n=S.notes.find(y=>y.id===editId);n.text=t;n.mood=mood}else S.notes.push({id:uid(),ts:Date.now(),text:t,mood});jd='';mood='';editId=null;save();R()},
+ nedit:i=>{const n=S.notes.find(y=>y.id===i);jd=n.text;mood=n.mood||'';editId=i;scrollTo(0,0);R()},
+ ncancel:()=>{jd='';mood='';editId=null;R()},
+ ndel:i=>{if(confirm('Supprimer cette note ?'))del('notes',i)},
  xall:()=>dl('assistant-sauvegarde-'+today()+'.json',JSON.stringify(S),'application/json'),
  imp:()=>$('#imp').click()
 };
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b&&A[b.dataset.a])A[b.dataset.a](b.dataset.i)});
-$('#imp').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(confirm('Remplacer les données actuelles par cette sauvegarde ?')){S=Object.assign(S,d);save();R()}}catch(x){alert('Fichier invalide.')}};r.readAsText(f);e.target.value=''};
+$('#imp').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(confirm('Remplacer les données actuelles par cette sauvegarde ?')){S=Object.assign(S,d);mig();save();R()}}catch(x){alert('Fichier invalide.')}};r.readAsText(f);e.target.value=''};
 R();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
